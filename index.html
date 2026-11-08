@@ -1,0 +1,2493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>纸样布料预览 · Pattern Studio</title>
+<meta name="theme-color" content="#f7f7f7">
+<meta name="description" content="上传纸样图，沿黑线描边裁片，填充布料纹理并实时预览。支持本地保存与离线使用。">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#f7f7f7;
+    --surface:#ffffff;
+    --line:#e6e6e6;
+    --line-strong:#e0e0e0;
+    --border-btn:#d8d8d8;
+    --text:#333333;
+    --text-2:#555555;
+    --muted:#666666;
+    --muted-2:#8a8a8a;
+    --primary:#4285f4;
+    --primary-soft:rgba(66,133,244,.12);
+    --danger-bg:#fce8e8;
+    --danger-line:#f3cccc;
+    --danger:#d93025;
+    --radius:8px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:14px;
+    line-height:1.5;
+    min-height:100dvh;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit;font-size:14px;cursor:pointer}
+  h1,h2,h3,p{margin:0}
+  [hidden]{display:none !important}
+
+  /* ---------- 操作按钮栏（窄屏：顶部横向；宽屏：左侧竖向面板） ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:60;
+    background:var(--surface);
+    border-bottom:1px solid var(--line);
+    padding:10px 12px;
+    padding-top:calc(10px + env(safe-area-inset-top));
+  }
+  .btnbar{display:flex;flex-wrap:wrap;gap:8px;max-width:1680px;margin:0 auto}
+  body.toolbar-left .topbar{
+    position:sticky;top:0;align-self:start;
+    width:216px;flex:0 0 auto;
+    height:100dvh;max-height:100dvh;overflow-y:auto;
+    border-bottom:0;border-right:1px solid var(--line);
+    padding:calc(14px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom));
+  }
+  body.toolbar-left .btnbar{
+    flex-direction:column;flex-wrap:nowrap;gap:8px;max-width:none;margin:0;
+  }
+  body.toolbar-left .btnbar .btn{width:100%;white-space:normal;text-align:left;line-height:1.3;padding:0 14px}
+  .btn{
+    height:44px;padding:0 14px;border-radius:var(--radius);
+    border:1px solid var(--border-btn);background:#fff;color:var(--text);
+    white-space:nowrap;flex:0 0 auto;
+    transition:background .15s,border-color .15s,transform .06s,box-shadow .15s;
+    touch-action:manipulation;
+  }
+  .btn:hover{background:#fafafa;border-color:#c9c9c9}
+  .btn:active{transform:scale(.985);background:#f2f2f2}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn.primary:hover{background:#3b7ae8;border-color:#3b7ae8}
+  .btn.primary:active{background:#3571db}
+  .btn.danger{background:var(--danger-bg);border-color:var(--danger-line);color:var(--danger)}
+  .btn.danger:hover{background:#fadcdc}
+  .btn[disabled]{opacity:.45;pointer-events:none}
+  .btn:focus-visible{outline:2px solid rgba(66,133,244,.45);outline-offset:2px}
+
+  /* ---------- 整体布局 ---------- */
+  .layout{
+    display:grid;gap:14px;
+    padding:12px 12px calc(28px + env(safe-area-inset-bottom));
+    max-width:1680px;margin:0 auto;
+  }
+  .canvasCol{min-width:0}
+  .side{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+  /* ---------- 画布 ---------- */
+  .stageWrap{
+    background:var(--surface);
+    border:1px solid var(--line-strong);
+    border-radius:12px;
+    padding:10px;
+  }
+  .stage{
+    position:relative;
+    width:100%;
+    height:360px;
+    background:#fff;
+    border-radius:8px;
+    overflow:hidden;
+    touch-action:none;
+    user-select:none;
+  }
+  #canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;background:#fff}
+  #canvas.drawing{cursor:crosshair}
+  .emptyHint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;padding:16px}
+  .emptyCard{
+    pointer-events:auto;text-align:center;background:rgba(255,255,255,.94);
+    border:1px dashed #dcdcdc;border-radius:12px;padding:22px 26px;
+  }
+  .emptyTitle{font-size:15px;color:#444;margin-bottom:4px}
+  .emptySub{font-size:12px;color:var(--muted-2);margin-bottom:14px}
+  .emptyCard .btn{height:40px;font-size:13px}
+
+  .zoombar{
+    position:absolute;right:10px;bottom:10px;display:flex;align-items:center;gap:2px;
+    background:rgba(255,255,255,.94);border:1px solid #e4e4e4;border-radius:10px;
+    box-shadow:0 2px 8px rgba(0,0,0,.06);padding:3px;backdrop-filter:blur(4px);
+  }
+  .zoombar button{
+    width:34px;height:32px;border:0;background:transparent;border-radius:7px;
+    color:#555;font-size:16px;display:flex;align-items:center;justify-content:center;
+  }
+  .zoombar button:hover{background:#f2f2f2}
+  .zoombar .fitBtn{width:auto;padding:0 9px;font-size:12px;color:#666}
+
+  .drawbar{
+    position:absolute;left:50%;top:10px;transform:translateX(-50%);
+    display:flex;align-items:center;gap:6px;
+    background:rgba(255,255,255,.97);border:1px solid #e2e2e2;border-radius:10px;
+    box-shadow:0 2px 10px rgba(0,0,0,.08);padding:5px 6px;max-width:calc(100% - 20px);
+  }
+  .drawingLabel{font-size:12px;color:#777;padding:0 4px 0 6px;white-space:nowrap}
+  .miniBtn{
+    height:34px;padding:0 10px;border-radius:7px;border:1px solid #dcdcdc;background:#fff;
+    color:#444;font-size:12.5px;white-space:nowrap;
+  }
+  .miniBtn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .miniBtn:active{transform:scale(.98)}
+
+  .hintRow{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted-2);padding:0 2px}
+  .dirtyTag{
+    flex:0 0 auto;font-size:11px;line-height:18px;padding:0 7px;border-radius:9px;
+    background:#eef6ea;color:#4a7d3a;border:1px solid #dcebd3;
+  }
+  .dirtyTag.unsaved{background:#fff4e5;color:#a35c00;border-color:#f3ddba}
+  .tiny{font-size:11.5px;color:var(--muted-2);line-height:1.6}
+  .backupNote{margin:4px 2px 0}
+
+  /* ---------- 布料库 ---------- */
+  .clothPanel{
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px 10px;
+  }
+  .clothPanelHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .clothPanelHead .sectionTitle{margin-bottom:0}
+  .clothCats{
+    display:flex;gap:6px;overflow-x:auto;padding:0 0 8px;scrollbar-width:none;
+  }
+  .clothCats::-webkit-scrollbar{display:none}
+  .catChip{
+    flex:0 0 auto;height:26px;padding:0 10px;border-radius:13px;
+    border:1px solid #e2e2e2;background:#fff;color:#666;font-size:12px;white-space:nowrap;
+  }
+  .catChip.active{background:rgba(66,133,244,.1);border-color:var(--primary);color:#2f6fd8;font-weight:500}
+  .catGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 18px 4px}
+  .catOption{
+    height:38px;border-radius:8px;border:1px solid #e0e0e0;background:#fff;
+    color:#555;font-size:13px;
+  }
+  .catOption.active{border-color:var(--primary);color:#2f6fd8;background:rgba(66,133,244,.08);font-weight:500}
+  .sectionTitle{font-size:12.5px;font-weight:400;color:var(--muted);margin-bottom:8px}
+  .clothList{
+    display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;
+    padding:8px 8px 4px 0;scrollbar-width:thin;scroll-behavior:smooth;
+  }
+  .clothList::-webkit-scrollbar{height:5px}
+  .clothList::-webkit-scrollbar-thumb{background:#dcdcdc;border-radius:3px}
+  .clothCell{position:relative;flex:0 0 auto;width:70px;height:70px}
+  .clothItem{
+    position:relative;width:100%;height:100%;border-radius:6px;overflow:hidden;
+    border:1px solid #e0e0e0;background:#fff;padding:0;
+    transition:border-color .15s,box-shadow .15s;
+  }
+  .clothItem img{width:100%;height:100%;object-fit:cover;display:block}
+  .clothItem.active{border:2px solid var(--primary);box-shadow:0 0 0 2px rgba(66,133,244,.14)}
+  .clothItem:active{transform:scale(.97)}
+  .clothDel{
+    position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;
+    border:1px solid #fff;background:rgba(60,64,72,.82);color:#fff;font-size:13px;line-height:1;
+    display:flex;align-items:center;justify-content:center;padding:0;
+    box-shadow:0 1px 4px rgba(0,0,0,.22);
+  }
+  .clothDel:active{background:var(--danger)}
+  .clothEmpty{
+    font-size:12px;color:#a0a0a0;border:1px dashed #dedede;border-radius:8px;
+    padding:14px 12px;text-align:center;flex:1 0 100%;
+  }
+
+  /* ---------- 参数面板 ---------- */
+  .panel{
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;
+  }
+  .params{display:none}
+  .params.open{display:block;animation:panelIn .18s ease-out}
+  @keyframes panelIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .panelHead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .panelHead h2{font-size:15px;font-weight:600;color:var(--text)}
+  .iconClose{
+    width:30px;height:30px;border:0;background:transparent;color:#999;border-radius:6px;
+    font-size:14px;line-height:1;margin:-4px -6px 0 0;
+  }
+  .iconClose:hover{background:#f4f4f4;color:#666}
+  .pieceMeta{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#666;margin-top:2px;margin-bottom:10px}
+  .pieceMeta .muted{color:#9a9a9a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .field{padding:7px 0}
+  .fieldHead{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--text-2);margin-bottom:2px}
+  .fieldHead .val{font-size:12px;color:#8c8c8c;font-variant-numeric:tabular-nums}
+  .switchRow{display:flex;align-items:center;justify-content:space-between;font-size:14px;color:var(--text-2)}
+  .switch{
+    position:relative;width:44px;height:26px;border-radius:13px;border:0;padding:0;
+    background:#d6d6d6;transition:background .18s;flex:0 0 auto;
+  }
+  .switch .knob{
+    position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22);transition:transform .18s;
+  }
+  .switch.on{background:var(--primary)}
+  .switch.on .knob{transform:translateX(18px)}
+
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;display:block;width:100%;height:26px;
+    margin:0;background:transparent;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:#e8e8e8}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;
+    background:var(--primary);margin-top:-7px;border:0;box-shadow:0 1px 3px rgba(0,0,0,.2);
+  }
+  input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#e8e8e8}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border:0;border-radius:50%;background:var(--primary);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  input[type=range]:focus-visible{outline:none}
+  input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(66,133,244,.22)}
+
+  .noteField label{display:block;font-size:14px;color:var(--text-2);margin-bottom:5px}
+  .textInput{
+    width:100%;height:40px;border:1px solid #dcdcdc;border-radius:6px;padding:0 10px;
+    font-size:14px;color:var(--text);background:#fff;outline:none;font-family:inherit;
+  }
+  .textInput::placeholder{color:#b3b3b3}
+  .textInput:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(66,133,244,.12)}
+
+  /* ---------- 弹窗 ---------- */
+  .overlay{
+    position:fixed;inset:0;z-index:100;background:rgba(32,33,36,.34);
+    display:flex;align-items:center;justify-content:center;padding:16px;
+    animation:fadeIn .15s ease-out;
+  }
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  .sheet{
+    width:100%;max-width:520px;max-height:min(78dvh,640px);background:#fff;border-radius:12px;
+    display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.18);
+    animation:sheetIn .18s ease-out;
+  }
+  @keyframes sheetIn{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:none}}
+  .sheet.small{max-width:380px}
+  .sheetHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px 12px;border-bottom:1px solid #f0f0f0}
+  .sheetHead h3{font-size:15px;font-weight:600}
+  .sheetBody{overflow-y:auto;padding:8px 12px 12px;min-height:120px}
+  .sheetFoot{padding:12px 16px 16px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #f4f4f4}
+  .sheetFoot .btn{height:40px;font-size:13px}
+  .sheetNote{padding:0 18px 14px;color:#9a9a9a;font-size:11.5px;line-height:1.6}
+
+  .paperItem{display:flex;align-items:center;gap:12px;padding:10px 6px;border-bottom:1px solid #f2f2f2}
+  .paperItem:last-child{border-bottom:0}
+  .paperThumb{
+    width:62px;height:62px;border-radius:7px;object-fit:cover;background:#f6f6f6;
+    border:1px solid #ececec;flex:0 0 auto;
+  }
+  .paperInfo{flex:1;min-width:0}
+  .paperName{font-size:14px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .paperMeta{font-size:11.5px;color:#9b9b9b;margin-top:2px}
+  .paperNameInput{width:100%;height:32px;border:1px solid var(--primary);border-radius:6px;padding:0 8px;font-size:14px;outline:none;font-family:inherit}
+  .paperActions{display:flex;gap:4px;flex:0 0 auto}
+  .linkBtn{
+    border:0;background:transparent;color:#5f6368;font-size:12.5px;padding:7px 8px;border-radius:6px;
+  }
+  .linkBtn:hover{background:#f3f3f3}
+  .linkBtn.danger{color:var(--danger)}
+  .listEmpty{padding:38px 10px;text-align:center;color:#a3a3a3;font-size:13px}
+
+  .nameForm{padding:16px 18px 4px}
+  .nameForm label{display:block;font-size:12px;color:#888;margin-bottom:6px}
+
+  .toast{
+    position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translate(-50%,12px);
+    background:rgba(50,51,54,.94);color:#fff;font-size:13px;line-height:1.5;
+    padding:10px 16px;border-radius:20px;max-width:calc(100vw - 40px);text-align:center;
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:200;
+    box-shadow:0 6px 20px rgba(0,0,0,.16);
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* ---------- 宽屏：按钮栏移到左侧，画布在右 ---------- */
+  @media (min-width:1000px){
+    body.toolbar-left{display:flex;align-items:flex-start}
+    .layout{flex:1;min-width:0;grid-template-columns:minmax(0,1fr) 342px;gap:20px;padding:16px 20px 40px;align-items:start}
+    .side{
+      position:sticky;
+      top:12px;
+      max-height:calc(100dvh - 24px);
+      overflow-y:auto;padding-bottom:4px;
+    }
+    .stage{height:520px}
+    .clothPanel{padding:14px 16px 12px}
+  }
+  @media (max-width:999px){
+    /* 手机/小屏：压缩顶部按钮栏文字与间距，把空间留给画布 */
+    .topbar{padding:5px 7px;padding-top:calc(5px + env(safe-area-inset-top))}
+    .btnbar{gap:5px}
+    .btnbar .btn{height:34px;padding:0 8px;font-size:12px;border-radius:6px;line-height:1.2}
+    /* 小屏使用短标签，12 个按钮压缩为 3 行；桌面端仍显示完整文字 */
+    .btnbar .btn[data-short]{font-size:0}
+    .btnbar .btn[data-short]::after{content:attr(data-short);font-size:12px;letter-spacing:0}
+    .layout{padding:6px 8px calc(20px + env(safe-area-inset-bottom));gap:10px}
+    .stageWrap{padding:8px}
+  }
+  @media (max-width:420px){
+    .btnbar .btn{padding:0 7px;font-size:12px}
+    .drawingLabel{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar" id="topbar">
+  <div class="btnbar" role="toolbar" aria-label="主要操作">
+    <button class="btn primary" id="btnUploadPaper">上传纸样图</button>
+    <button class="btn" id="btnSavedList" data-short="已存纸样">加载已保存纸样</button>
+    <button class="btn primary" id="btnSavePaper" data-short="保存纸样">保存当前纸样到列表</button>
+    <button class="btn primary" id="btnExportBackup">导出裁片备份</button>
+    <button class="btn primary" id="btnImportBackup">导入裁片备份</button>
+    <button class="btn primary" id="btnExportAll">导出全部备份</button>
+    <button class="btn primary" id="btnImportAll">导入备份</button>
+    <button class="btn" id="btnUploadCloth">上传布料</button>
+    <button class="btn" id="btnNewPolygon" data-short="新增框选">新增多边形框选区域</button>
+    <button class="btn danger" id="btnDeletePiece" data-short="删除选中">删除选中区域</button>
+    <button class="btn danger" id="btnClear">清空画布</button>
+    <button class="btn primary" id="btnExportImage">导出预览图</button>
+  </div>
+</header>
+
+<main class="layout">
+  <div class="canvasCol">
+    <div class="stageWrap" id="stageWrap">
+      <div class="stage" id="stage">
+        <canvas id="canvas"></canvas>
+        <div class="emptyHint" id="emptyHint">
+          <div class="emptyCard">
+            <div class="emptyTitle">上传纸样图开始描边</div>
+            <div class="emptySub">图纸与裁片只保存在本机，不会上传服务器</div>
+            <button class="btn primary" id="btnEmptyUpload">选择纸样图</button>
+          </div>
+        </div>
+        <div class="drawbar" id="drawbar" hidden>
+          <span class="drawingLabel">描边中 · 点击添加节点</span>
+          <button class="miniBtn" id="btnUndoPoint">撤销一点</button>
+          <button class="miniBtn primary" id="btnFinishPoly">完成</button>
+          <button class="miniBtn" id="btnCancelPoly">取消</button>
+        </div>
+        <div class="zoombar">
+          <button id="btnZoomOut" aria-label="缩小">−</button>
+          <button id="btnFit" class="fitBtn" aria-label="适应视图">适应</button>
+          <button id="btnZoomIn" aria-label="放大">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="hintRow">
+      <span class="dirtyTag" id="dirtyTag">已保存</span>
+      <span>未点击保存的裁片，关闭页面后会丢失</span>
+    </div>
+    <p class="tiny backupNote">裁片备份仅保存轮廓与参数，纸样原图请您自行保管。</p>
+  </div>
+
+  <aside class="side">
+    <section class="clothPanel">
+      <div class="clothPanelHead">
+        <h2 class="sectionTitle">布料库</h2>
+      </div>
+      <div class="clothCats" id="clothCats" role="tablist" aria-label="布料分类"></div>
+      <div class="clothList" id="clothList"></div>
+    </section>
+
+    <section class="panel params" id="paramsPanel">
+      <div class="panelHead">
+        <h2>裁片纹理参数</h2>
+        <button class="iconClose" id="btnDeselect" aria-label="取消选中">✕</button>
+      </div>
+      <div class="pieceMeta"><span id="pieceName">裁片</span><span class="muted" id="pieceCloth">未填充布料</span></div>
+
+      <div class="field switchRow">
+        <span>平铺重复</span>
+        <button class="switch on" id="swTile" role="switch" aria-checked="true" aria-label="平铺重复"><span class="knob"></span></button>
+      </div>
+
+      <div class="field">
+        <div class="fieldHead"><span>纹理缩放</span><span class="val" id="valScale">1.00×</span></div>
+        <input type="range" id="rScale" min="0.1" max="4" step="0.05" value="1">
+      </div>
+      <div class="field">
+        <div class="fieldHead"><span>横向偏移</span><span class="val" id="valOx">0</span></div>
+        <input type="range" id="rOx" min="-2000" max="2000" step="1" value="0">
+      </div>
+      <div class="field">
+        <div class="fieldHead"><span>纵向偏移</span><span class="val" id="valOy">0</span></div>
+        <input type="range" id="rOy" min="-2000" max="2000" step="1" value="0">
+      </div>
+      <div class="field">
+        <div class="fieldHead"><span>旋转</span><span class="val" id="valRot">0°</span></div>
+        <input type="range" id="rRot" min="0" max="360" step="1" value="0">
+      </div>
+
+      <div class="field noteField">
+        <label for="noteInput">花距备注</label>
+        <input id="noteInput" class="textInput" type="text" maxlength="60" placeholder="仅文字记录，不自动换算尺寸">
+      </div>
+    </section>
+  </aside>
+</main>
+
+<input type="file" id="filePaper" accept="image/*" hidden>
+<input type="file" id="fileCloth" accept="image/*" multiple hidden>
+<input type="file" id="fileBackup" accept="image/png,application/json,.png,.json" hidden>
+<input type="file" id="fileFullBackup" accept=".pattern-bak,application/json,application/octet-stream" hidden>
+
+<div class="overlay" id="listModal" hidden>
+  <div class="sheet">
+    <div class="sheetHead">
+      <h3>已保存的纸样</h3>
+      <button class="iconClose" data-close="listModal" aria-label="关闭">✕</button>
+    </div>
+    <div class="sheetBody" id="paperList"></div>
+    <p class="sheetNote">纸样原图、裁片轮廓与布料参数保存在本机浏览器数据库。清除该网站数据会一并删除，请定期导出裁片备份。</p>
+  </div>
+</div>
+
+<div class="overlay" id="nameModal" hidden>
+  <div class="sheet small">
+    <div class="sheetHead"><h3 id="nameTitle">命名纸样</h3></div>
+    <div class="nameForm">
+      <label for="nameInput">纸样名称</label>
+      <input class="textInput" id="nameInput" maxlength="30" placeholder="例如：托特包 A 版">
+    </div>
+    <div class="sheetFoot">
+      <button class="btn" id="btnNameCancel">取消</button>
+      <button class="btn primary" id="btnNameOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="catModal" hidden>
+  <div class="sheet small">
+    <div class="sheetHead">
+      <h3>选择布料分类</h3>
+      <button class="iconClose" data-close="catModal" aria-label="关闭">✕</button>
+    </div>
+    <p class="tiny" style="padding:10px 18px 0">选好分类后，再选择要上传的布料图片。</p>
+    <div class="catGrid" id="catGrid"></div>
+    <div class="sheetFoot">
+      <button class="btn" data-close="catModal">取消</button>
+      <button class="btn primary" id="btnCatOk">选择图片</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+
+/* ===================== 工具 ===================== */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const pad2 = (n) => String(n).padStart(2, '0');
+const fmtDate = (t) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+const baseName = (s) => (s || '').replace(/\.[^.]+$/, '').trim();
+const CLOTH_CATS = ['绿色', '粉色', '米色', '咖色', '黑色', '蓝色', '黄色', '红色', '紫色', '配布', '素布', '包边条'];
+const DEFAULT_CAT = '素布';
+
+/* ===================== 状态 ===================== */
+const state = {
+  img: null, imgW: 0, imgH: 0, imgUrl: null, imgBlob: null,
+  view: { s: 1, x: 0, y: 0 }, fitScale: 1,
+  pieces: [], selectedId: null,
+  drawing: null,          // {pts:[], cursor:null, snap:null}
+  cloths: [], activeClothId: null,
+  clothFilter: 'all',     // 布料库分类筛选：'all' 或分类名
+  currentPaperId: null, currentName: '',
+  dirty: false,
+  snapGrid: null
+};
+let canvasCtx = null;
+const patternCache = new WeakMap();
+let renderQueued = false;
+let toastTimer = 0;
+let nameResolver = null;
+
+const els = {
+  topbar: $('topbar'), stage: $('stage'), stageWrap: $('stageWrap'), canvas: $('canvas'),
+  emptyHint: $('emptyHint'), drawbar: $('drawbar'), dirtyTag: $('dirtyTag'),
+  clothList: $('clothList'), paramsPanel: $('paramsPanel'),
+  clothCats: $('clothCats'), catGrid: $('catGrid'),
+  pieceName: $('pieceName'), pieceCloth: $('pieceCloth'),
+  swTile: $('swTile'), rScale: $('rScale'), rOx: $('rOx'), rOy: $('rOy'), rRot: $('rRot'),
+  valScale: $('valScale'), valOx: $('valOx'), valOy: $('valOy'), valRot: $('valRot'),
+  noteInput: $('noteInput'),
+  listModal: $('listModal'), paperList: $('paperList'),
+  nameModal: $('nameModal'), nameInput: $('nameInput'), nameTitle: $('nameTitle'),
+  toast: $('toast'),
+  filePaper: $('filePaper'), fileCloth: $('fileCloth'), fileBackup: $('fileBackup'),
+  fileFullBackup: $('fileFullBackup')
+};
+
+/* ===================== IndexedDB ===================== */
+const DB_NAME = 'pattern-studio-db';
+const DB_VER = 1;
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) return reject(new Error('no-indexeddb'));
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains('papers')) d.createObjectStore('papers', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('cloths')) d.createObjectStore('cloths', { keyPath: 'id' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('blocked'));
+  });
+}
+function idbPut(store, val) {
+  return new Promise((res, rej) => {
+    if (!db) return rej(new Error('db-unavailable'));
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(val);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error);
+  });
+}
+function idbGetAll(store) {
+  return new Promise((res, rej) => {
+    if (!db) return rej(new Error('db-unavailable'));
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => res(req.result || []);
+    req.onerror = () => rej(req.error);
+  });
+}
+function idbDelete(store, key) {
+  return new Promise((res, rej) => {
+    if (!db) return rej(new Error('db-unavailable'));
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).delete(key);
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
+
+/* ===================== UI 辅助 ===================== */
+function toast(msg, ms = 2400) {
+  els.toast.textContent = msg;
+  els.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => els.toast.classList.remove('show'), ms);
+}
+function markDirty(v = true) {
+  state.dirty = v;
+  els.dirtyTag.textContent = v ? '未保存' : '已保存';
+  els.dirtyTag.classList.toggle('unsaved', v);
+}
+function sheetVisible(id) { return !$(id).hidden; }
+function openSheet(id) {
+  $(id).hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet(id) {
+  $(id).hidden = true;
+  if (!['listModal', 'nameModal', 'catModal'].some(sheetVisible)) document.body.style.overflow = '';
+}
+function askName(title, defVal) {
+  return new Promise((resolve) => {
+    if (nameResolver) { nameResolver(null); nameResolver = null; }
+    els.nameTitle.textContent = title;
+    els.nameInput.value = defVal || '';
+    openSheet('nameModal');
+    nameResolver = resolve;
+    setTimeout(() => { els.nameInput.focus(); els.nameInput.select(); }, 60);
+  });
+}
+function finishName(ok) {
+  if (!nameResolver) return;
+  const val = els.nameInput.value.trim();
+  const r = ok ? (val || '未命名纸样') : null;
+  closeSheet('nameModal');
+  const fn = nameResolver;
+  nameResolver = null;
+  fn(r);
+}
+
+/* ===================== 图片 ===================== */
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => resolve({ img, url });
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image-decode')); };
+    img.src = url;
+  });
+}
+function getCloth(id) {
+  return state.cloths.find((c) => c.id === id) || null;
+}
+function selectedPiece() {
+  return state.pieces.find((p) => p.id === state.selectedId) || null;
+}
+
+/* ===================== 视图与尺寸 ===================== */
+function resizeCanvasBacking() {
+  const c = els.canvas;
+  const w = Math.max(1, c.clientWidth), h = Math.max(1, c.clientHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+  if (c.width !== bw || c.height !== bh) { c.width = bw; c.height = bh; }
+  return dpr;
+}
+function fitView() {
+  if (!state.img) { state.view = { s: 1, x: 0, y: 0 }; return; }
+  const cw = els.canvas.clientWidth || 1, ch = els.canvas.clientHeight || 1;
+  const m = 14;
+  const s = Math.min((cw - m * 2) / state.imgW, (ch - m * 2) / state.imgH);
+  state.fitScale = s;
+  state.view.s = s;
+  state.view.x = (cw - state.imgW * s) / 2;
+  state.view.y = (ch - state.imgH * s) / 2;
+}
+function minScale() { return Math.max(0.02, state.fitScale * 0.4); }
+function maxScale() { return Math.max(0.5, state.fitScale * 14); }
+function toWorld(sx, sy) {
+  const v = state.view;
+  return { x: (sx - v.x) / v.s, y: (sy - v.y) / v.s };
+}
+function localPoint(e) {
+  const r = els.canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function zoomAt(pt, factor) {
+  const v = state.view;
+  const ns = clamp(v.s * factor, minScale(), maxScale());
+  if (ns === v.s) return;
+  v.x = pt.x - (pt.x - v.x) * (ns / v.s);
+  v.y = pt.y - (pt.y - v.y) * (ns / v.s);
+  v.s = ns;
+  scheduleRender();
+}
+function relayout(fit) {
+  const stage = els.stage, wrap = els.stageWrap;
+  const leftMode = document.body.classList.contains('toolbar-left');
+  const headerH = leftMode ? 0 : (els.topbar.offsetHeight || 64);
+  const wasW = stage.clientWidth, wasH = stage.clientHeight;
+  const prevCenter = (state.img && wasW > 0 && wasH > 0)
+    ? toWorld(wasW / 2, wasH / 2) : null;
+
+  const availW = stage.clientWidth || Math.max(200, wrap.clientWidth - 22);
+  const isDesk = window.innerWidth >= 1000;
+  const maxH = isDesk
+    ? Math.max(320, window.innerHeight - 150)
+    : Math.max(250, Math.round(window.innerHeight * 0.5));
+  let h = Math.min(maxH, 380);
+  if (state.img) h = clamp(availW / (state.imgW / state.imgH), 230, maxH);
+  stage.style.height = Math.round(h) + 'px';
+
+  const cw = stage.clientWidth, ch = stage.clientHeight;
+  if (!state.img) { state.view = { s: 1, x: 0, y: 0 }; }
+  else if (fit || !prevCenter) fitView();
+  else {
+    state.view.x = cw / 2 - prevCenter.x * state.view.s;
+    state.view.y = ch / 2 - prevCenter.y * state.view.s;
+  }
+  render();
+}
+function scrollCanvasIntoView() {
+  if (window.innerWidth >= 1000) return;
+  const headerH = els.topbar.offsetHeight || 0;
+  const top = window.scrollY + els.stageWrap.getBoundingClientRect().top - headerH - 8;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+function pathPoly(c, pts, close = true) {
+  c.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (i === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
+  }
+  if (close) c.closePath();
+}
+function bboxOf(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+}
+function getPattern(c, cloth) {
+  let m = patternCache.get(c);
+  if (!m) { m = new Map(); patternCache.set(c, m); }
+  let pat = m.get(cloth.id);
+  if (!pat) {
+    pat = c.createPattern(cloth.img, 'repeat');
+    m.set(cloth.id, pat);
+  }
+  return pat;
+}
+function drawPieceTexture(c, p) {
+  const cloth = getCloth(p.clothId);
+  if (!cloth || !cloth.img) return false;
+  const b = bboxOf(p.points);
+  c.save();
+  pathPoly(c, p.points);
+  c.clip();
+  if (p.tile !== false) {
+    const pat = getPattern(c, cloth);
+    if (pat && pat.setTransform) {
+      const m = new DOMMatrix();
+      m.translateSelf(p.ox || 0, p.oy || 0);
+      m.rotateSelf(p.rot || 0);
+      m.scaleSelf(p.scale || 1);
+      pat.setTransform(m);
+    }
+    if (pat) {
+      c.fillStyle = pat;
+      c.fillRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+    }
+  } else {
+    const iw = cloth.img.naturalWidth || cloth.img.width;
+    const ih = cloth.img.naturalHeight || cloth.img.height;
+    const base = Math.max(b.w / iw, b.h / ih);
+    const s = base * (p.scale || 1);
+    const cx = b.x + b.w / 2 + (p.ox || 0);
+    const cy = b.y + b.h / 2 + (p.oy || 0);
+    c.translate(cx, cy);
+    c.rotate((p.rot || 0) * Math.PI / 180);
+    c.scale(s, s);
+    c.drawImage(cloth.img, -iw / 2, -ih / 2, iw, ih);
+  }
+  c.restore();
+  return true;
+}
+function render() {
+  const c = els.canvas;
+  if (!canvasCtx) canvasCtx = c.getContext('2d');
+  const ctx = canvasCtx;
+  const dpr = resizeCanvasBacking();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  if (!state.img) return;
+
+  const v = state.view;
+  ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.x, dpr * v.y);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(state.img, 0, 0, state.imgW, state.imgH);
+
+  /* 裁片布料 */
+  for (const p of state.pieces) drawPieceTexture(ctx, p);
+
+  /* 用正片叠底把纸样黑线重新压回布料之上：白底不变，黑线保持清晰 */
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.drawImage(state.img, 0, 0, state.imgW, state.imgH);
+  ctx.restore();
+
+  /* 选中半透明遮罩 */
+  const sel = selectedPiece();
+  if (sel) {
+    pathPoly(ctx, sel.points);
+    ctx.fillStyle = 'rgba(66,133,244,0.14)';
+    ctx.fill();
+  }
+
+  /* 裁片轮廓 */
+  const px = 1 / v.s;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  /* 选中顶点组涉及到的裁片：蓝色高亮轮廓与选中标记同源 */
+  const groupIds = new Set();
+  if (selectedVertexGroup) {
+    for (const r of selectedVertexGroup) {
+      if (r.kind === 'piece') groupIds.add(r.piece.id);
+    }
+  }
+  for (const p of state.pieces) {
+    const active = p.id === state.selectedId || groupIds.has(p.id);
+    pathPoly(ctx, p.points);
+    ctx.lineWidth = (active ? 2 : 1.2) * px;
+    ctx.strokeStyle = active ? '#4285f4' : 'rgba(90,100,115,0.55)';
+    ctx.stroke();
+  }
+
+  /* 选中节点标记：优先遍历选中的顶点组，逐点绘制选中圆点 */
+  if (selectedVertexGroup && selectedVertexGroup.length) {
+    ctx.lineWidth = 1.6 * px;
+    for (const ref of selectedVertexGroup) {
+      const pt = refPoint(ref);
+      if (!pt) continue;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 5 * px, 0, Math.PI * 2);
+      ctx.fillStyle = '#4285f4';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+    }
+  } else if (sel) {
+    /* 普通独立顶点：保持原有白底蓝边样式 */
+    ctx.lineWidth = 1.4 * px;
+    for (const pt of sel.points) {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 4.2 * px, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = '#4285f4';
+      ctx.stroke();
+    }
+  }
+
+  /* 正在描边 */
+  if (state.drawing) {
+    const pts = state.drawing.pts;
+    const cur = state.drawing.cursor;
+    if (pts.length) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      if (cur) ctx.lineTo(cur.x, cur.y);
+      const nearFirst = pts.length >= 3 && cur &&
+        Math.hypot(cur.x - pts[0].x, cur.y - pts[0].y) * v.s < 16;
+      if (nearFirst) ctx.closePath();
+      ctx.setLineDash([6 * px, 4 * px]);
+      ctx.lineWidth = 1.8 * px;
+      ctx.strokeStyle = '#4285f4';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    for (let i = 0; i < pts.length; i++) {
+      const pt = pts[i];
+      const first = i === 0;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, (first ? 5 : 4) * px, 0, Math.PI * 2);
+      ctx.fillStyle = first ? '#4285f4' : '#fff';
+      ctx.fill();
+      ctx.lineWidth = 1.6 * px;
+      ctx.strokeStyle = '#4285f4';
+      ctx.stroke();
+    }
+    if (state.drawing.snap) {
+      const pt = state.drawing.snap;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 9 * px, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5 * px;
+      ctx.strokeStyle = 'rgba(66,133,244,0.9)';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pt.x - 12 * px, pt.y); ctx.lineTo(pt.x + 12 * px, pt.y);
+      ctx.moveTo(pt.x, pt.y - 12 * px); ctx.lineTo(pt.x, pt.y + 12 * px);
+      ctx.lineWidth = 1 * px;
+      ctx.strokeStyle = 'rgba(66,133,244,0.55)';
+      ctx.stroke();
+    }
+  }
+}
+
+/* ===================== 磁吸：图纸黑线网格 ===================== */
+function buildSnapGrid() {
+  state.snapGrid = null;
+  if (!state.img) return;
+  const maxSide = 900;
+  const k = Math.min(1, maxSide / Math.max(state.imgW, state.imgH));
+  const cw = Math.max(1, Math.round(state.imgW * k));
+  const ch = Math.max(1, Math.round(state.imgH * k));
+  const c = document.createElement('canvas');
+  c.width = cw; c.height = ch;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(state.img, 0, 0, cw, ch);
+  let data;
+  try { data = g.getImageData(0, 0, cw, ch).data; }
+  catch (err) { return; }
+  const cell = 10;
+  const buckets = new Map();
+  const gray = new Float32Array(cw * ch);
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const i = (y * cw + x) * 4;
+      if (data[i + 3] < 60) continue;
+      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      gray[y * cw + x] = lum / 255;
+      if (lum > 120) continue;
+      const key = ((x / cell) | 0) + ',' + ((y / cell) | 0);
+      let arr = buckets.get(key);
+      if (!arr) { arr = []; buckets.set(key, arr); }
+      arr.push(x, y);
+    }
+  }
+  const kx = cw / state.imgW, ky = ch / state.imgH;
+  state.snapGrid = {
+    kx, ky,
+    cell, buckets, cw, ch,
+    corners: detectCorners(gray, cw, ch, kx, ky)
+  };
+}
+/* Harris 角点：用于吸附纸样线条的转角、拐点 */
+function detectCorners(gray, cw, ch, kx, ky) {
+  const n = cw * ch;
+  const gx = new Float32Array(n), gy = new Float32Array(n);
+  for (let y = 1; y < ch - 1; y++) {
+    for (let x = 1; x < cw - 1; x++) {
+      const i = y * cw + x;
+      gx[i] = gray[i + 1] - gray[i - 1];
+      gy[i] = gray[i + cw] - gray[i - cw];
+    }
+  }
+  const Sxx = new Float32Array(n), Syy = new Float32Array(n), Sxy = new Float32Array(n);
+  for (let y = 1; y < ch - 1; y++) {
+    for (let x = 1; x < cw - 1; x++) {
+      const i = y * cw + x;
+      let a = 0, b = 0, c = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        let j = i + dy * cw - 1;
+        for (let dx = 0; dx < 3; dx++, j++) {
+          const u = gx[j], v = gy[j];
+          a += u * u; b += v * v; c += u * v;
+        }
+      }
+      Sxx[i] = a; Syy[i] = b; Sxy[i] = c;
+    }
+  }
+  const resp = new Float32Array(n);
+  let maxR = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Sxx[i], b = Syy[i], c = Sxy[i];
+    const r = a * b - c * c - 0.04 * (a + b) * (a + b);
+    if (r > 0) { resp[i] = r; if (r > maxR) maxR = r; }
+  }
+  if (maxR <= 0) return [];
+  const thr = maxR * 0.012;
+  const out = [];
+  for (let y = 2; y < ch - 2; y++) {
+    for (let x = 2; x < cw - 2; x++) {
+      const i = y * cw + x;
+      const r = resp[i];
+      if (r < thr) continue;
+      let peak = true;
+      for (let dy = -1; dy <= 1 && peak; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          if (resp[i + dy * cw + dx] > r) { peak = false; break; }
+        }
+      }
+      if (peak) out.push({ x: x / kx, y: y / ky, score: r });
+    }
+  }
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, 400);
+}
+function nearestDark(wx, wy, radiusWorld) {
+  const g = state.snapGrid;
+  if (!g) return null;
+  const rx = wx * g.kx, ry = wy * g.ky;
+  const rr = Math.max(1.5, radiusWorld * Math.min(g.kx, g.ky));
+  const c0 = Math.floor((rx - rr) / g.cell), c1 = Math.floor((rx + rr) / g.cell);
+  const r0 = Math.floor((ry - rr) / g.cell), r1 = Math.floor((ry + rr) / g.cell);
+  let best = null, bd = rr;
+  for (let cy = r0; cy <= r1; cy++) {
+    for (let cx = c0; cx <= c1; cx++) {
+      const arr = g.buckets.get(cx + ',' + cy);
+      if (!arr) continue;
+      for (let i = 0; i < arr.length; i += 2) {
+        const dx = arr[i] - rx, dy = arr[i + 1] - ry;
+        const d = Math.hypot(dx, dy);
+        if (d <= bd) { bd = d; best = { x: arr[i] / g.kx, y: arr[i + 1] / g.ky }; }
+      }
+    }
+  }
+  return best;
+}
+function distToSeg(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const L = dx * dx + dy * dy;
+  if (!L) return { d: Math.hypot(p.x - a.x, p.y - a.y), x: a.x, y: a.y };
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / L;
+  t = clamp(t, 0, 1);
+  const x = a.x + dx * t, y = a.y + dy * t;
+  return { d: Math.hypot(p.x - x, p.y - y), x, y };
+}
+function snapWorld(w, dragIgnoreSelf) {
+  const s = state.view.s;
+  let best = null, bd = Infinity;
+  /* 拖动顶点时：忽略被拖顶点自身（按引用 + 原位坐标）及与之相连的边线，禁止吸附回原位 */
+  const ig = dragIgnoreSelf && vdrag ? vdrag : null;
+  const igP = new Set(), igD = new Set();
+  if (ig) {
+    for (const r of ig.refs) {
+      if (r.kind === 'piece') igP.add(r.piece.id + ':' + r.idx);
+      else igD.add(r.idx);
+    }
+  }
+  const selfTol = ig ? Math.max(1.2, 10 / s) : 0;
+  const isSelf = (x, y) => !!ig && Math.hypot(x - ig.ox, y - ig.oy) <= selfTol;
+  const consider = (x, y, type, thr) => {
+    const d = Math.hypot(x - w.x, y - w.y);
+    if (d <= thr && d < bd) { bd = d; best = { x, y, type }; }
+  };
+  /* 1. 已有裁片节点（便于共用边线 / 闭合） */
+  for (const p of state.pieces) {
+    for (let i = 0; i < p.points.length; i++) {
+      const q = p.points[i];
+      if (igP.has(p.id + ':' + i) || isSelf(q.x, q.y)) continue;
+      consider(q.x, q.y, 'vertex', 14 / s);
+    }
+  }
+  if (state.drawing) {
+    const pts = state.drawing.pts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (igD.has(i) || isSelf(pts[i].x, pts[i].y)) continue;
+      consider(pts[i].x, pts[i].y, 'vertex', 14 / s);
+    }
+  }
+  if (best) return { ...best, snapped: true };
+  /* 2. 已有裁片边线（共用同一条边）；拖动时跳过与自身相连的全部边线 */
+  const segTest = (pts, open) => {
+    const n = open ? pts.length - 1 : pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      if (ig && (isSelf(a.x, a.y) || isSelf(b.x, b.y))) continue;
+      const r = distToSeg(w, a, b);
+      if (ig && isSelf(r.x, r.y)) continue;
+      if (r.d <= 9 / s && r.d < bd) { bd = r.d; best = { x: r.x, y: r.y, type: 'edge' }; }
+    }
+  };
+  for (const p of state.pieces) segTest(p.points, false);
+  if (state.drawing && state.drawing.pts.length > 1) segTest(state.drawing.pts, true);
+  if (best) return { ...best, snapped: true };
+  /* 3. 纸样拐点 / 转角（Harris 角点） */
+  if (state.snapGrid && state.snapGrid.corners) {
+    let cb = null, cd = 13 / s;
+    for (const c of state.snapGrid.corners) {
+      if (ig && isSelf(c.x, c.y)) continue;
+      const d = Math.hypot(c.x - w.x, c.y - w.y);
+      if (d < cd) { cd = d; cb = c; }
+    }
+    if (cb) return { x: cb.x, y: cb.y, type: 'corner', snapped: true };
+  }
+  /* 4. 纸样黑线像素；拖动死区内不吸附，保证小幅拖动立即响应 */
+  const dk = nearestDark(w.x, w.y, 16 / s);
+  if (dk && !(ig && isSelf(dk.x, dk.y))) return { x: dk.x, y: dk.y, type: 'line', snapped: true };
+  return { x: w.x, y: w.y, type: 'none', snapped: false };
+}
+
+/* ===================== 选中 / 描边 ===================== */
+function pointInPoly(pt, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if (((a.y > pt.y) !== (b.y > pt.y)) &&
+      (pt.x < (b.x - a.x) * (pt.y - a.y) / ((b.y - a.y) || 1e-9) + a.x)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+function hitTest(w) {
+  for (let i = state.pieces.length - 1; i >= 0; i--) {
+    if (pointInPoly(w, state.pieces[i].points)) return state.pieces[i];
+  }
+  return null;
+}
+function selectPiece(id) {
+  state.selectedId = id;
+  selectedVertexGroup = null;
+  const p = selectedPiece();
+  if (p && p.clothId && getCloth(p.clothId)) {
+    state.activeClothId = p.clothId;
+    highlightActiveCloth();
+  }
+  syncParams();
+  scheduleRender();
+}
+function setSwitch(on) {
+  els.swTile.classList.toggle('on', !!on);
+  els.swTile.setAttribute('aria-checked', on ? 'true' : 'false');
+}
+function updateValLabels() {
+  els.valScale.textContent = Number(els.rScale.value).toFixed(2) + '×';
+  els.valOx.textContent = Math.round(Number(els.rOx.value)) + 'px';
+  els.valOy.textContent = Math.round(Number(els.rOy.value)) + 'px';
+  els.valRot.textContent = Math.round(Number(els.rRot.value)) + '°';
+}
+function syncParams() {
+  const p = selectedPiece();
+  els.paramsPanel.classList.toggle('open', !!p);
+  if (!p) return;
+  els.pieceName.textContent = p.name || '裁片';
+  const cloth = getCloth(p.clothId);
+  els.pieceCloth.textContent = cloth ? '布料：' + cloth.name : '未填充布料';
+  setSwitch(p.tile !== false);
+  els.rScale.value = p.scale == null ? 1 : p.scale;
+  els.rOx.value = p.ox == null ? 0 : p.ox;
+  els.rOy.value = p.oy == null ? 0 : p.oy;
+  els.rRot.value = p.rot == null ? 0 : p.rot;
+  els.noteInput.value = p.note || '';
+  updateValLabels();
+}
+
+/* ===================== 描边流程 ===================== */
+function startDrawing() {
+  if (!state.img) { toast('请先上传纸样图'); return; }
+  state.selectedId = null;
+  selectedVertexGroup = null;
+  syncParams();
+  state.drawing = { pts: [], cursor: null, snap: null };
+  els.drawbar.hidden = false;
+  els.canvas.classList.add('drawing');
+  toast('沿纸样黑线点击描边，点回起点闭合', 2000);
+  scheduleRender();
+  scrollCanvasIntoView();
+}
+function cancelDrawing() {
+  state.drawing = null;
+  vdrag = null;
+  els.drawbar.hidden = true;
+  els.canvas.classList.remove('drawing');
+  syncCanvasCursor();
+  render();
+}
+function undoPoint() {
+  if (!state.drawing) return;
+  state.drawing.pts.pop();
+  state.drawing.snap = null;
+  render();
+}
+function addDrawPoint(screenPt) {
+  if (!state.drawing) return;
+  const w = toWorld(screenPt.x, screenPt.y);
+  const s = snapWorld(w);
+  const pts = state.drawing.pts;
+  if (pts.length >= 3 && Math.hypot(s.x - pts[0].x, s.y - pts[0].y) * state.view.s < 16) {
+    finishDrawing();
+    return;
+  }
+  if (pts.length) {
+    const last = pts[pts.length - 1];
+    if (Math.hypot(s.x - last.x, s.y - last.y) * state.view.s < 4) return;
+  }
+  pts.push({ x: s.x, y: s.y });
+  state.drawing.cursor = { x: s.x, y: s.y };
+  state.drawing.snap = null;
+  render();
+}
+function finishDrawing() {
+  if (!state.drawing) return;
+  const pts = state.drawing.pts.map((p) => ({ x: p.x, y: p.y }));
+  if (pts.length < 3) { toast('至少需要 3 个节点'); return; }
+  const piece = {
+    id: uid(),
+    name: '裁片 ' + (state.pieces.length + 1),
+    points: pts,
+    clothId: state.activeClothId || null,
+    tile: true, scale: 1, ox: 0, oy: 0, rot: 0, note: ''
+  };
+  state.pieces.push(piece);
+  state.drawing = null;
+  vdrag = null;
+  els.drawbar.hidden = true;
+  els.canvas.classList.remove('drawing');
+  syncCanvasCursor();
+  markDirty(true);
+  selectPiece(piece.id);
+  render();
+  toast(state.activeClothId ? '裁片已创建并填充布料' : '裁片已创建，点击下方布料即可填充');
+  scrollCanvasIntoView();
+}
+
+/* ===================== 指针交互 ===================== */
+const pointers = new Map();
+let drag = null;   // 单指/鼠标：平移画布或描边光标 {id,start,moved,pan,v0}
+let vdrag = null;  // 描边模式下拖拽已有裁片顶点 {id,refs,...}
+let selectedVertexGroup = null; // 当前选中的顶点组（共用顶点可能含多个 refs）
+let pinch = null;
+
+/* 描边模式下的命中检测：顶点优先，其次线段，最后才是空白（画布平移） */
+function vertexHitAt(w) {
+  const s = state.view.s;
+  const tol = 14 / s;           // 顶点命中阈值 14px（屏幕）
+  /* 遍历全部裁片的所有顶点，收集 14px 误差范围内的顶点，不在第一个处退出 */
+  const refs = [];
+  const push = (ref, x, y) => {
+    if (Math.hypot(x - w.x, y - w.y) <= tol) refs.push(ref);
+  };
+  for (const p of state.pieces) {
+    for (let i = 0; i < p.points.length; i++) {
+      push({ kind: 'piece', piece: p, idx: i, x: p.points[i].x, y: p.points[i].y },
+        p.points[i].x, p.points[i].y);
+    }
+  }
+  if (state.drawing) {
+    const pts = state.drawing.pts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      push({ kind: 'draft', idx: i, x: pts[i].x, y: pts[i].y }, pts[i].x, pts[i].y);
+    }
+  }
+  if (!refs.length) return { x: w.x, y: w.y, refs: [] };
+  /* 以最近顶点为锚点，把与其坐标重合（含贴合误差）的顶点全部并入同一组 */
+  let anchor = refs[0], nd = Infinity;
+  for (const r of refs) {
+    const d = Math.hypot(r.x - w.x, r.y - w.y);
+    if (d < nd) { nd = d; anchor = r; }
+  }
+  const groupTol = Math.max(1.2, 4 / s);
+  const group = refs.filter((r) => Math.hypot(r.x - anchor.x, r.y - anchor.y) <= groupTol);
+  return { x: anchor.x, y: anchor.y, refs: group };
+}
+/* 传入顶点组 + 新坐标：组内所有裁片顶点同步更新 */
+function moveVertexRef(refs, x, y) {
+  for (const ref of refs) {
+    if (ref.kind === 'piece') {
+      ref.piece.points[ref.idx] = { x, y };
+    } else if (state.drawing && ref.idx < state.drawing.pts.length) {
+      state.drawing.pts[ref.idx] = { x, y };
+    }
+  }
+}
+/* 取顶点引用的实时坐标（用于渲染选中标记） */
+function refPoint(ref) {
+  if (ref.kind === 'piece') return ref.piece.points[ref.idx] || null;
+  return state.drawing ? (state.drawing.pts[ref.idx] || null) : null;
+}
+/* 描边模式下的线段命中检测：顶点不作为命中目标（交给 snapWorld 吸附成描边节点） */
+function drawHitTest(w) {
+  const s = state.view.s;
+  let eBest = null, ed = Infinity;
+  const eTest = (pts, owner, open) => {
+    const n = open ? pts.length - 1 : pts.length;
+    for (let i = 0; i < n; i++) {
+      const r = distToSeg(w, pts[i], pts[(i + 1) % pts.length]);
+      if (r.d <= 9 / s && r.d < ed) { ed = r.d; eBest = { type: 'edge', owner, idx: i }; }
+    }
+  };
+  for (const p of state.pieces) eTest(p.points, { kind: 'piece', id: p.id }, false);
+  if (state.drawing) eTest(state.drawing.pts, { kind: 'draft' }, true);
+  return eBest;
+}
+function syncCanvasCursor() {
+  if (drag && drag.moved) { els.canvas.style.cursor = 'grabbing'; return; }
+  els.canvas.style.cursor = state.drawing ? 'crosshair' : '';
+}
+
+function onPointerDown(e) {
+  if (!state.img) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const pt = localPoint(e);
+  try { els.canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  pointers.set(e.pointerId, pt);
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = {
+      d: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      v: { ...state.view }
+    };
+    drag = null; vdrag = null;
+    if (state.drawing) { state.drawing.cursor = null; state.drawing.snap = null; }
+    scheduleRender();
+    return;
+  }
+  if (pointers.size > 2) return;
+  const w0 = toWorld(pt.x, pt.y);
+  /* 描边模式：命中交给 snapWorld（顶点只作吸附坐标，不触发顶点组选中） */
+  if (!state.drawing) {
+    const vh = vertexHitAt(w0);
+    if (vh.refs.length > 0) {
+      /* 顶点优先：共用顶点整组一起选中/拖动，同时选中命中裁片 */
+      const owns = vh.refs.filter((r) => r.kind === 'piece');
+      if (owns.length) selectPiece(owns[owns.length - 1].piece.id);
+      selectedVertexGroup = vh.refs;   // 选中顶点组，供渲染标记/高亮使用
+      vdrag = {
+        id: e.pointerId, refs: vh.refs, start: pt, moved: false,
+        ox: vh.x, oy: vh.y
+      };
+      scheduleRender();
+      return;
+    }
+    drag = { id: e.pointerId, start: pt, moved: false, pan: true, v0: { ...state.view } };
+    return;
+  }
+  const hit = drawHitTest(w0);
+  /* 命中线段：保持单击加点；空白区域：允许拖拽平移画布 */
+  drag = { id: e.pointerId, start: pt, moved: false, pan: !hit, v0: { ...state.view } };
+  if (hit) { state.drawing.cursor = null; state.drawing.snap = null; }
+  return;
+}
+function onPointerMove(e) {
+  if (!pointers.has(e.pointerId)) return;
+  const pt = localPoint(e);
+  pointers.set(e.pointerId, pt);
+  if (pointers.size >= 2 && pinch) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const ns = clamp(pinch.v.s * (d / pinch.d), minScale(), maxScale());
+    state.view.s = ns;
+    state.view.x = mid.x - ((pinch.mid.x - pinch.v.x) / pinch.v.s) * ns;
+    state.view.y = mid.y - ((pinch.mid.y - pinch.v.y) / pinch.v.s) * ns;
+    scheduleRender();
+    return;
+  }
+  if (vdrag && vdrag.id === e.pointerId) {
+    const vdx = pt.x - vdrag.start.x, vdy = pt.y - vdrag.start.y;
+    if (!vdrag.moved && Math.hypot(vdx, vdy) > 3) vdrag.moved = true;
+    if (!vdrag.moved) return;
+    /* 拖动中开启 dragIgnoreSelf：忽略自身顶点与相连边线，小幅拖动即时响应 */
+    const sn = snapWorld(toWorld(pt.x, pt.y), true);
+    moveVertexRef(vdrag.refs, sn.x, sn.y);
+    markDirty(true);
+    scheduleRender();
+    return;
+  }
+  if (!drag || drag.id !== e.pointerId) return;
+  const dx = pt.x - drag.start.x, dy = pt.y - drag.start.y;
+  if (!drag.moved && Math.hypot(dx, dy) > 6) { drag.moved = true; syncCanvasCursor(); }
+  if (state.drawing) {
+    if (drag.pan) {
+      if (drag.moved) {
+        state.view.x = drag.v0.x + dx;
+        state.view.y = drag.v0.y + dy;
+        scheduleRender();
+      }
+      return;
+    }
+    if (!drag.moved) return;
+    const sn = snapWorld(toWorld(pt.x, pt.y));
+    state.drawing.cursor = sn;
+    state.drawing.snap = sn.snapped ? sn : null;
+    scheduleRender();
+    return;
+  }
+  if (drag.moved) {
+    state.view.x = drag.v0.x + dx;
+    state.view.y = drag.v0.y + dy;
+    scheduleRender();
+  }
+}
+function onPointerEnd(e, cancelled) {
+  if (!pointers.has(e.pointerId)) return;
+  const wasPinch = !!pinch;
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (vdrag && vdrag.id === e.pointerId) vdrag = null;
+  if (cancelled) { drag = null; syncCanvasCursor(); return; }
+  if (drag && drag.id === e.pointerId) {
+    if (!drag.moved && !wasPinch) {
+      if (state.drawing) {
+        /* 单击加点：使用按下时坐标，避免鼠标轻微移动导致吸附抖动 */
+        addDrawPoint(drag.start);
+      } else {
+        const sp = localPoint(e);
+        const hit = hitTest(toWorld(sp.x, sp.y));
+        selectPiece(hit ? hit.id : null);
+      }
+    }
+    drag = null;
+    syncCanvasCursor();
+  }
+  if (state.drawing && pointers.size === 0) {
+    state.drawing.cursor = null;
+    state.drawing.snap = null;
+    render();
+  }
+}
+function bindCanvas() {
+  const c = els.canvas;
+  c.addEventListener('pointerdown', onPointerDown);
+  c.addEventListener('pointermove', onPointerMove);
+  c.addEventListener('pointerup', (e) => onPointerEnd(e, false));
+  c.addEventListener('pointercancel', (e) => onPointerEnd(e, true));
+  c.addEventListener('wheel', (e) => {
+    if (!state.img) return;
+    e.preventDefault();
+    const pt = localPoint(e);
+    const f = Math.exp(-e.deltaY * 0.0018);
+    zoomAt(pt, f);
+  }, { passive: false });
+  /* 桌面端描边时：悬停实时预览吸附点，并在顶点/线段上显示移动光标 */
+  c.addEventListener('mousemove', (e) => {
+    if (e.buttons !== 0 || !state.img || !state.drawing) return;
+    const lp = localPoint(e);
+    const w = toWorld(lp.x, lp.y);
+    const sn = snapWorld(w);
+    state.drawing.cursor = sn;
+    state.drawing.snap = sn.snapped ? sn : null;
+    c.style.cursor = drawHitTest(w) ? 'move' : 'crosshair';
+    scheduleRender();
+  });
+  c.addEventListener('mouseleave', () => {
+    if (!state.drawing) return;
+    state.drawing.cursor = null;
+    state.drawing.snap = null;
+    scheduleRender();
+  });
+  c.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+/* ===================== 布料库 ===================== */
+let pendingClothCat = DEFAULT_CAT;
+function renderClothCats() {
+  const box = els.clothCats;
+  box.textContent = '';
+  for (const name of ['全部', ...CLOTH_CATS]) {
+    const key = name === '全部' ? 'all' : name;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'catChip' + (state.clothFilter === key ? ' active' : '');
+    b.textContent = name;
+    b.setAttribute('aria-pressed', state.clothFilter === key ? 'true' : 'false');
+    b.addEventListener('click', () => {
+      state.clothFilter = key;
+      renderClothCats();
+      renderCloths();
+    });
+    box.appendChild(b);
+  }
+}
+function renderCatGrid() {
+  els.catGrid.textContent = '';
+  for (const name of CLOTH_CATS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'catOption' + (pendingClothCat === name ? ' active' : '');
+    b.textContent = name;
+    b.addEventListener('click', () => {
+      pendingClothCat = name;
+      renderCatGrid();
+    });
+    els.catGrid.appendChild(b);
+  }
+}
+function openCatModal() {
+  pendingClothCat = CLOTH_CATS.includes(state.clothFilter) ? state.clothFilter : DEFAULT_CAT;
+  renderCatGrid();
+  openSheet('catModal');
+}
+function renderCloths() {
+  const box = els.clothList;
+  box.textContent = '';
+  if (!state.cloths.length) {
+    const d = document.createElement('div');
+    d.className = 'clothEmpty';
+    d.textContent = '还没有布料，点击「上传布料」按钮添加';
+    box.appendChild(d);
+    return;
+  }
+  const list = state.clothFilter === 'all'
+    ? state.cloths
+    : state.cloths.filter((c) => c.cat === state.clothFilter);
+  if (!list.length) {
+    const d = document.createElement('div');
+    d.className = 'clothEmpty';
+    d.textContent = '「' + state.clothFilter + '」分类下还没有布料';
+    box.appendChild(d);
+    return;
+  }
+  for (const c of list) {
+    const cell = document.createElement('div');
+    cell.className = 'clothCell';
+
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'clothItem' + (c.id === state.activeClothId ? ' active' : '');
+    b.dataset.id = c.id;
+    b.title = c.name + ' · ' + (c.cat || DEFAULT_CAT);
+    b.setAttribute('aria-label', '布料 ' + c.name);
+    const im = document.createElement('img');
+    im.src = c.url;
+    im.alt = c.name;
+    im.draggable = false;
+    b.appendChild(im);
+    b.addEventListener('click', () => chooseCloth(c.id));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'clothDel';
+    del.textContent = '×';
+    del.title = '删除布料';
+    del.setAttribute('aria-label', '删除布料 ' + c.name);
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteCloth(c.id);
+    });
+
+    cell.append(b, del);
+    box.appendChild(cell);
+  }
+}
+function highlightActiveCloth() {
+  els.clothList.querySelectorAll('.clothItem').forEach((el) => {
+    el.classList.toggle('active', el.dataset.id === state.activeClothId);
+  });
+}
+function chooseCloth(id) {
+  state.activeClothId = id;
+  highlightActiveCloth();
+  const p = selectedPiece();
+  if (p) {
+    p.clothId = id;
+    markDirty(true);
+    syncParams();
+    render();
+    toast('已填充「' + (getCloth(id)?.name || '布料') + '」');
+  } else {
+    toast('已选中布料，选中裁片后再点一次该布料即可填充');
+  }
+}
+async function deleteCloth(id) {
+  const c = getCloth(id);
+  if (!c) return;
+  if (!confirm(`删除布料「${c.name}」？删除后不可恢复，已填充该布料的裁片会变为空白。`)) return;
+  try {
+    await idbDelete('cloths', id);
+  } catch (err) {
+    console.warn(err);
+    toast('删除失败，请重试');
+    return;
+  }
+  state.cloths = state.cloths.filter((x) => x.id !== id);
+  if (state.activeClothId === id) state.activeClothId = null;
+  let affected = false;
+  for (const p of state.pieces) {
+    if (p.clothId === id) { p.clothId = null; affected = true; }
+  }
+  if (c.url) URL.revokeObjectURL(c.url);
+  renderCloths();
+  if (affected) {
+    markDirty(true);
+    syncParams();
+    render();
+  }
+  toast('已删除布料');
+}
+async function addClothFiles(files, cat = DEFAULT_CAT) {
+  if (!files || !files.length) return;
+  const category = CLOTH_CATS.includes(cat) ? cat : DEFAULT_CAT;
+  let added = 0;
+  for (const f of files) {
+    if (!f.type || !f.type.startsWith('image/')) continue;
+    try {
+      const { img, url } = await loadImageFromBlob(f);
+      const id = uid();
+      const rec = {
+        id, name: baseName(f.name) || '布料', cat: category,
+        blob: f, createdAt: Date.now()
+      };
+      try { await idbPut('cloths', rec); }
+      catch (err) { console.warn('布料写入本地库失败', err); }
+      state.cloths.push({ id, name: rec.name, cat: category, blob: f, img, url });
+      state.activeClothId = id;
+      added++;
+    } catch (err) {
+      console.warn('布料图片无法读取', err);
+    }
+  }
+  if (added) state.clothFilter = category;
+  renderClothCats();
+  renderCloths();
+  syncParams();
+  scheduleRender();
+  els.clothList.scrollLeft = els.clothList.scrollWidth;
+  if (added) toast(`已添加 ${added} 块布料（${category}）`);
+  else toast('未能读取所选图片');
+}
+async function restoreCloths() {
+  try {
+    const recs = await idbGetAll('cloths');
+    recs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    for (const rec of recs) {
+      if (!rec.blob) continue;
+      try {
+        const { img, url } = await loadImageFromBlob(rec.blob);
+        state.cloths.push({
+          id: rec.id, name: rec.name || '布料',
+          cat: CLOTH_CATS.includes(rec.cat) ? rec.cat : DEFAULT_CAT,
+          blob: rec.blob, img, url
+        });
+      } catch (err) { console.warn('布料恢复失败', err); }
+    }
+    if (state.cloths.length) state.activeClothId = state.cloths[state.cloths.length - 1].id;
+  } catch (err) {
+    console.warn('读取布料库失败', err);
+  }
+  renderCloths();
+}
+async function reloadCloths() {
+  for (const c of state.cloths) {
+    if (c.url) URL.revokeObjectURL(c.url);
+  }
+  state.cloths = [];
+  state.activeClothId = null;
+  await restoreCloths();
+  renderClothCats();
+}
+
+/* ===================== 纸样载入 ===================== */
+async function applyPaper(blob, opts = {}) {
+  const { img, url } = await loadImageFromBlob(blob);
+  if (state.imgUrl) URL.revokeObjectURL(state.imgUrl);
+  state.img = img;
+  state.imgW = img.naturalWidth;
+  state.imgH = img.naturalHeight;
+  state.imgUrl = url;
+  state.imgBlob = blob;
+  state.currentName = opts.name || '未命名纸样';
+  state.currentPaperId = opts.paperId || null;
+  state.pieces = (opts.pieces || []).map((p) => ({ ...p }));
+  state.selectedId = null;
+  selectedVertexGroup = null;
+  state.drawing = null;
+  els.drawbar.hidden = true;
+  els.canvas.classList.remove('drawing');
+  els.emptyHint.hidden = true;
+  buildSnapGrid();
+  markDirty(!!opts.dirty);
+  syncParams();
+  relayout(true);
+  scrollCanvasIntoView();
+}
+function makeThumb() {
+  const W = 320;
+  const H = Math.max(1, Math.round(W * state.imgH / state.imgW));
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, W, H);
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(state.img, 0, 0, W, H);
+  return c.toDataURL('image/jpeg', 0.82);
+}
+function serializePieces() {
+  return state.pieces.map((p) => ({
+    name: p.name,
+    points: p.points.map((q) => ({ x: +q.x.toFixed(2), y: +q.y.toFixed(2) })),
+    clothId: p.clothId,
+    clothName: getCloth(p.clothId)?.name || '',
+    clothCat: getCloth(p.clothId)?.cat || '',
+    tile: p.tile !== false,
+    scale: p.scale, ox: p.ox, oy: p.oy, rot: p.rot,
+    note: p.note || ''
+  }));
+}
+function resolveClothId(id, name) {
+  if (id && getCloth(id)) return id;
+  if (name) {
+    const c = state.cloths.find((x) => x.name === name);
+    if (c) return c.id;
+  }
+  return null;
+}
+function sanitizePieces(list, sx = 1, sy = 1) {
+  const out = [];
+  let unmatched = 0;
+  for (const raw of (Array.isArray(list) ? list : [])) {
+    const pts = (raw.points || [])
+      .map((p) => ({ x: Number(p.x) * sx, y: Number(p.y) * sy }))
+      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+    if (pts.length < 3) continue;
+    const clothId = resolveClothId(raw.clothId, raw.clothName);
+    if (!clothId && raw.clothName) unmatched++;
+    out.push({
+      id: uid(),
+      name: raw.name || '裁片 ' + (out.length + 1),
+      points: pts,
+      clothId,
+      tile: raw.tile !== false,
+      scale: clamp(Number(raw.scale) || 1, 0.1, 4),
+      ox: clamp(Number(raw.ox) || 0, -2000, 2000),
+      oy: clamp(Number(raw.oy) || 0, -2000, 2000),
+      rot: ((Number(raw.rot) || 0) % 360 + 360) % 360,
+      note: typeof raw.note === 'string' ? raw.note.slice(0, 60) : ''
+    });
+  }
+  return { pieces: out, unmatched };
+}
+
+/* ===================== 保存 / 列表 ===================== */
+async function savePaper() {
+  if (!state.img) { toast('请先上传纸样图'); return; }
+  if (!state.imgBlob) { toast('原图数据缺失，请重新上传纸样'); return; }
+  if (!state.currentPaperId) {
+    const def = state.currentName && state.currentName !== '未命名纸样'
+      ? state.currentName : '纸样 ' + fmtDate(Date.now());
+    const name = await askName('保存纸样到列表', def);
+    if (name === null) return;
+    state.currentName = name;
+  }
+  const now = Date.now();
+  const rec = {
+    id: state.currentPaperId || uid(),
+    name: state.currentName || '未命名纸样',
+    createdAt: now,
+    updatedAt: now,
+    width: state.imgW,
+    height: state.imgH,
+    thumb: makeThumb(),
+    imageBlob: state.imgBlob,
+    pieces: serializePieces()
+  };
+  if (state.currentPaperId) {
+    try {
+      const old = (await idbGetAll('papers')).find((r) => r.id === state.currentPaperId);
+      if (old && old.createdAt) rec.createdAt = old.createdAt;
+    } catch (err) { console.warn(err); }
+  }
+  try {
+    await idbPut('papers', rec);
+    state.currentPaperId = rec.id;
+    state.currentName = rec.name;
+    markDirty(false);
+    toast('已保存到纸样列表');
+  } catch (err) {
+    console.error(err);
+    toast('保存失败，设备存储可能已满');
+  }
+}
+async function openSavedList() {
+  const body = els.paperList;
+  body.textContent = '';
+  let recs = [];
+  try { recs = await idbGetAll('papers'); }
+  catch (err) { console.warn(err); toast('本地数据库不可用，无法读取列表'); }
+  recs.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (!recs.length) {
+    const d = document.createElement('div');
+    d.className = 'listEmpty';
+    d.textContent = '还没有保存的纸样\n描好裁片后点击「保存当前纸样到列表」';
+    d.style.whiteSpace = 'pre-line';
+    body.appendChild(d);
+  } else {
+    for (const rec of recs) body.appendChild(buildPaperRow(rec));
+  }
+  openSheet('listModal');
+}
+async function loadPaperRecord(rec, opts = {}) {
+  if (opts.confirmDirty !== false && state.dirty &&
+      !confirm('当前未保存的裁片将丢失，仍要加载其他纸样吗？')) return false;
+  if (!rec.imageBlob) { toast('该记录缺少原图数据'); return false; }
+  const { pieces } = sanitizePieces(rec.pieces || []);
+  await applyPaper(rec.imageBlob, {
+    name: rec.name, pieces, paperId: rec.id, dirty: false
+  });
+  closeSheet('listModal');
+  if (opts.silent !== true) toast('已加载「' + (rec.name || '纸样') + '」');
+  return true;
+}
+function buildPaperRow(rec) {
+  const row = document.createElement('div');
+  row.className = 'paperItem';
+
+  const img = document.createElement('img');
+  img.className = 'paperThumb';
+  img.alt = rec.name || '纸样';
+  if (rec.thumb) img.src = rec.thumb;
+
+  const info = document.createElement('div');
+  info.className = 'paperInfo';
+  const nm = document.createElement('div');
+  nm.className = 'paperName';
+  nm.textContent = rec.name || '未命名纸样';
+  const meta = document.createElement('div');
+  meta.className = 'paperMeta';
+  meta.textContent = `${(rec.pieces || []).length} 个裁片 · ${fmtDate(rec.updatedAt || rec.createdAt || Date.now())}`;
+  info.append(nm, meta);
+
+  const acts = document.createElement('div');
+  acts.className = 'paperActions';
+
+  const loadBtn = document.createElement('button');
+  loadBtn.className = 'linkBtn';
+  loadBtn.textContent = '加载';
+  loadBtn.addEventListener('click', async () => {
+    try {
+      await loadPaperRecord(rec);
+    } catch (err) {
+      console.error(err);
+      toast('加载失败，原图可能已损坏');
+    }
+  });
+
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'linkBtn';
+  renameBtn.textContent = '重命名';
+  renameBtn.addEventListener('click', () => {
+    if (info.querySelector('input')) return;
+    const input = document.createElement('input');
+    input.className = 'paperNameInput';
+    input.value = rec.name || '';
+    input.maxLength = 30;
+    info.replaceChild(input, nm);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = async (save) => {
+      if (done) return;
+      done = true;
+      if (save) {
+        const v = input.value.trim() || rec.name || '未命名纸样';
+        rec.name = v;
+        rec.updatedAt = Date.now();
+        try { await idbPut('papers', rec); } catch (err) { toast('重命名保存失败'); }
+        if (state.currentPaperId === rec.id) state.currentName = v;
+        nm.textContent = v;
+      }
+      if (input.parentNode) info.replaceChild(nm, input);
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+    });
+    input.addEventListener('blur', () => commit(true));
+  });
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'linkBtn danger';
+  delBtn.textContent = '删除';
+  delBtn.addEventListener('click', async () => {
+    if (!confirm(`删除纸样「${rec.name || '未命名'}」？删除后不可恢复。`)) return;
+    try {
+      await idbDelete('papers', rec.id);
+      if (state.currentPaperId === rec.id) { state.currentPaperId = null; }
+      row.remove();
+      if (!els.paperList.children.length) {
+        const d = document.createElement('div');
+        d.className = 'listEmpty';
+        d.textContent = '列表已空';
+        els.paperList.appendChild(d);
+      }
+      toast('已删除');
+    } catch (err) { toast('删除失败'); }
+  });
+
+  acts.append(loadBtn, renameBtn, delBtn);
+  row.append(img, info, acts);
+  return row;
+}
+
+/* ===================== 裁片备份（PNG 内嵌数据） ===================== */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function b64encode(bytes) {
+  let s = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(s);
+}
+function b64decode(str) {
+  const bin = atob(str);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function insertPngText(pngBytes, keyword, text) {
+  const dv = new DataView(pngBytes.buffer, pngBytes.byteOffset);
+  const ihdrLen = dv.getUint32(8);
+  const insertAt = 8 + 12 + ihdrLen;
+  const typeBytes = new TextEncoder().encode('tEXt');
+  const data = new TextEncoder().encode(keyword + '\u0000' + text);
+  const chunk = new Uint8Array(12 + data.length);
+  const cdv = new DataView(chunk.buffer);
+  cdv.setUint32(0, data.length);
+  chunk.set(typeBytes, 4);
+  chunk.set(data, 8);
+  const crcInput = new Uint8Array(4 + data.length);
+  crcInput.set(typeBytes, 0);
+  crcInput.set(data, 4);
+  cdv.setUint32(8 + data.length, crc32(crcInput));
+  const out = new Uint8Array(pngBytes.length + chunk.length);
+  out.set(pngBytes.subarray(0, insertAt), 0);
+  out.set(chunk, insertAt);
+  out.set(pngBytes.subarray(insertAt), insertAt + chunk.length);
+  return out;
+}
+function extractBackupJson(buf) {
+  const u8 = new Uint8Array(buf);
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (let i = 0; i < 8; i++) if (u8[i] !== sig[i]) return null;
+  const dv = new DataView(buf);
+  let off = 8;
+  while (off + 12 <= u8.length) {
+    const len = dv.getUint32(off);
+    if (len > u8.length) break;
+    const type = String.fromCharCode(u8[off + 4], u8[off + 5], u8[off + 6], u8[off + 7]);
+    if (type === 'tEXt') {
+      const data = u8.subarray(off + 8, off + 8 + len);
+      let zero = -1;
+      for (let i = 0; i < data.length; i++) if (data[i] === 0) { zero = i; break; }
+      if (zero > 0) {
+        let key = '';
+        for (let i = 0; i < zero; i++) key += String.fromCharCode(data[i]);
+        if (key === 'PatternStudio') {
+          let val = '';
+          for (let i = zero + 1; i < data.length; i++) val += String.fromCharCode(data[i]);
+          try { return new TextDecoder().decode(b64decode(val)); }
+          catch (err) { return null; }
+        }
+      }
+    }
+    if (type === 'IEND') break;
+    off += 12 + len;
+  }
+  return null;
+}
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+function drawBackupCard(payload) {
+  const c = document.createElement('canvas');
+  c.width = 900; c.height = 560;
+  const g = c.getContext('2d');
+  const font = '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif';
+  g.fillStyle = '#f7f7f7'; g.fillRect(0, 0, 900, 560);
+  roundRect(g, 36, 36, 828, 488, 20);
+  g.fillStyle = '#fff'; g.fill();
+  g.strokeStyle = '#e6e6e6'; g.lineWidth = 1; g.stroke();
+  g.fillStyle = '#4285f4';
+  roundRect(g, 76, 84, 6, 104, 3); g.fill();
+  g.fillStyle = '#333';
+  g.font = '600 38px ' + font;
+  g.fillText('裁片备份', 102, 120);
+  g.fillStyle = '#666';
+  g.font = '21px ' + font;
+  const nm = payload.name.length > 22 ? payload.name.slice(0, 22) + '…' : payload.name;
+  g.fillText(nm, 102, 158);
+  g.strokeStyle = '#f0f0f0';
+  g.beginPath(); g.moveTo(76, 212); g.lineTo(824, 212); g.stroke();
+  g.fillStyle = '#555';
+  g.font = '21px ' + font;
+  g.fillText('裁片数量：' + payload.pieces.length + ' 个', 76, 258);
+  g.fillText('原图尺寸：' + payload.size.w + ' × ' + payload.size.h + ' px', 76, 302);
+  g.fillText('导出时间：' + fmtDate(payload.exportedAt), 76, 346);
+  roundRect(g, 76, 374, 748, 108, 10);
+  g.fillStyle = '#f6f9ff'; g.fill();
+  g.fillStyle = '#54678c';
+  g.font = '18px ' + font;
+  g.fillText('此图片内嵌裁片轮廓与参数数据，请勿用修图软件编辑或转存为 JPG。', 96, 412);
+  g.fillText('导入方式：打开应用 → 导入裁片备份 → 选择本图片。', 96, 446);
+  g.fillStyle = '#9a9a9a';
+  g.font = '15px ' + font;
+  g.fillText('裁片备份仅保存轮廓与参数，纸样原图请您自行保管。', 76, 512);
+  return new Promise((res) => c.toBlob(res, 'image/png'));
+}
+function safeName(s) { return (s || '纸样').replace(/[\\/:*?"<>|]/g, '_').slice(0, 24); }
+function dateStamp() {
+  const d = new Date();
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+}
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = name;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+}
+async function exportBackup() {
+  if (!state.img) { toast('请先上传纸样图'); return; }
+  if (!state.pieces.length) { toast('画布上还没有裁片'); return; }
+  const payload = {
+    app: 'pattern-studio',
+    version: 1,
+    name: state.currentName || '裁片备份',
+    size: { w: state.imgW, h: state.imgH },
+    exportedAt: Date.now(),
+    pieces: serializePieces()
+  };
+  try {
+    const json = JSON.stringify(payload);
+    const cardBlob = await drawBackupCard(payload);
+    if (!cardBlob) throw new Error('card');
+    const png = new Uint8Array(await cardBlob.arrayBuffer());
+    const out = insertPngText(png, 'PatternStudio', b64encode(new TextEncoder().encode(json)));
+    downloadBlob(new Blob([out], { type: 'image/png' }),
+      `裁片备份_${safeName(state.currentName || '纸样')}_${dateStamp()}.png`);
+    toast('备份图片已生成，可保存到相册长期保管', 3200);
+  } catch (err) {
+    console.error(err);
+    toast('导出备份失败');
+  }
+}
+async function handleBackupFile(file) {
+  if (!file) return;
+  if (!state.img) { toast('请先上传对应的纸样原图，再导入裁片备份'); return; }
+  let json = null;
+  try {
+    if (file.type === 'application/json' || /\.json$/i.test(file.name)) {
+      json = await file.text();
+    } else {
+      json = extractBackupJson(await file.arrayBuffer());
+    }
+  } catch (err) { console.warn(err); }
+  if (!json) { toast('未在该文件中找到裁片备份数据'); return; }
+  let data = null;
+  try { data = JSON.parse(json); } catch (err) { toast('备份数据已损坏'); return; }
+  if (!data || data.app !== 'pattern-studio' || !Array.isArray(data.pieces)) {
+    toast('不是有效的裁片备份'); return;
+  }
+  if (state.pieces.length && !confirm('导入会替换当前画布上的裁片，是否继续？')) return;
+  const bw = Number(data.size && data.size.w) || state.imgW;
+  const bh = Number(data.size && data.size.h) || state.imgH;
+  const sx = state.imgW / bw, sy = state.imgH / bh;
+  const { pieces, unmatched } = sanitizePieces(data.pieces, sx, sy);
+  if (!pieces.length) { toast('备份中没有有效裁片'); return; }
+  state.pieces = pieces;
+  state.selectedId = null;
+  selectedVertexGroup = null;
+  state.currentPaperId = null;
+  if (data.name) state.currentName = data.name;
+  markDirty(true);
+  syncParams();
+  fitView();
+  render();
+  let msg = `已导入 ${pieces.length} 个裁片`;
+  if (unmatched) msg += `，${unmatched} 个未匹配到布料`;
+  if (Math.abs(sx - sy) > 0.02) msg += '（尺寸不一致，已按比例缩放）';
+  toast(msg, 3600);
+}
+
+/* ===================== 全量备份（.pattern-bak） ===================== */
+const FULL_BAK_VERSION = 1;
+function blobToDataURL(blob) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(fr.error || new Error('read-failed'));
+    fr.readAsDataURL(blob);
+  });
+}
+function dataURLToBlob(url) {
+  const m = /^data:([^;,]*)(;base64)?,/.exec(String(url || ''));
+  if (!m) throw new Error('bad-data-url');
+  const mime = m[1] || 'application/octet-stream';
+  const body = String(url).slice(m[0].length);
+  if (m[2]) {
+    const bin = atob(body);
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new Blob([u8], { type: mime });
+  }
+  return new Blob([decodeURIComponent(body)], { type: mime });
+}
+/* 记录坐标完全重合的顶点索引，导入后强制写回同一坐标，保证共用点不被拆散 */
+function buildSharedVertices(pieces) {
+  const map = new Map();
+  pieces.forEach((p, pi) => {
+    (p.points || []).forEach((q, vi) => {
+      const key = Number(q.x).toFixed(2) + ',' + Number(q.y).toFixed(2);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push([pi, vi]);
+    });
+  });
+  return [...map.values()].filter((g) => g.length > 1);
+}
+function applySharedVertices(pieces, groups) {
+  for (const g of (Array.isArray(groups) ? groups : [])) {
+    if (!Array.isArray(g) || !g.length) continue;
+    const [pi0, vi0] = g[0] || [];
+    const p0 = pieces[pi0];
+    if (!p0 || !Array.isArray(p0.points) || !p0.points[vi0]) continue;
+    const x = Number(p0.points[vi0].x);
+    const y = Number(p0.points[vi0].y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    for (const [pi, vi] of g) {
+      const p = pieces[pi];
+      if (p && Array.isArray(p.points) && p.points[vi]) p.points[vi] = { x, y };
+    }
+  }
+}
+async function exportFullBackup() {
+  if (!db) { toast('本地数据库不可用，无法导出'); return; }
+  try {
+    const papers = [];
+    for (const rec of await idbGetAll('papers')) {
+      papers.push({
+        id: rec.id,
+        name: rec.name || '未命名纸样',
+        createdAt: rec.createdAt || 0,
+        updatedAt: rec.updatedAt || 0,
+        width: rec.width || 0,
+        height: rec.height || 0,
+        thumb: rec.thumb || '',
+        image: rec.imageBlob ? await blobToDataURL(rec.imageBlob) : null,
+        pieces: Array.isArray(rec.pieces) ? rec.pieces : [],
+        shared: buildSharedVertices(Array.isArray(rec.pieces) ? rec.pieces : [])
+      });
+    }
+    const cloths = [];
+    for (const rec of await idbGetAll('cloths')) {
+      if (!rec.blob) continue;
+      cloths.push({
+        id: rec.id,
+        name: rec.name || '布料',
+        cat: CLOTH_CATS.includes(rec.cat) ? rec.cat : DEFAULT_CAT,
+        createdAt: rec.createdAt || 0,
+        image: await blobToDataURL(rec.blob)
+      });
+    }
+    if (!papers.length && !cloths.length) { toast('本地还没有可备份的数据'); return; }
+    const payload = {
+      app: 'pattern-studio',
+      kind: 'full-backup',
+      version: FULL_BAK_VERSION,
+      exportedAt: Date.now(),
+      papers, cloths
+    };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/octet-stream' });
+    downloadBlob(blob, `纸样布料全备份_${dateStamp()}.pattern-bak`);
+    toast(`已导出 ${papers.length} 份纸样、${cloths.length} 块布料（全部在本机完成）`, 3400);
+  } catch (err) {
+    console.error(err);
+    toast('导出失败，请重试');
+  }
+}
+async function importFullBackup(file) {
+  if (!file) return;
+  let data = null;
+  try {
+    data = JSON.parse(await file.text());
+  } catch (err) {
+    toast('备份文件已损坏，无法解析');
+    return;
+  }
+  if (!data || data.app !== 'pattern-studio' || data.kind !== 'full-backup') {
+    toast('不是有效的全量备份文件');
+    return;
+  }
+  if (!Number.isFinite(Number(data.version)) || Number(data.version) > FULL_BAK_VERSION) {
+    toast('备份版本不兼容，请更新应用后再导入');
+    return;
+  }
+  const papers = Array.isArray(data.papers) ? data.papers : [];
+  const cloths = Array.isArray(data.cloths) ? data.cloths : [];
+  if (!papers.length && !cloths.length) { toast('备份文件中没有数据'); return; }
+  if (!db) { toast('本地数据库不可用，无法导入'); return; }
+  if (!confirm(`将从备份恢复 ${papers.length} 份纸样、${cloths.length} 块布料并写入本机，导入完成后会自动打开其中一份纸样，是否继续？`)) return;
+  try {
+    const written = [];
+    let okCloths = 0, okPapers = 0;
+    for (const c of cloths) {
+      if (!c || typeof c.image !== 'string') continue;
+      let blob = null;
+      try { blob = dataURLToBlob(c.image); } catch (err) { continue; }
+      await idbPut('cloths', {
+        id: c.id || uid(),
+        name: c.name || '布料',
+        cat: CLOTH_CATS.includes(c.cat) ? c.cat : DEFAULT_CAT,
+        blob,
+        createdAt: c.createdAt || Date.now()
+      });
+      okCloths++;
+    }
+    /* 布料先入库并重新载入内存，纸样裁片才能按 id / 名称正确绑定 */
+    await reloadCloths();
+    for (const p of papers) {
+      if (!p || !Array.isArray(p.pieces)) continue;
+      const rawPieces = p.pieces.map((x) => ({
+        ...x,
+        points: Array.isArray(x.points) ? x.points.map((q) => ({ x: Number(q.x), y: Number(q.y) })) : []
+      }));
+      applySharedVertices(rawPieces, p.shared);
+      const { pieces } = sanitizePieces(rawPieces);
+      let imageBlob = null;
+      if (typeof p.image === 'string') {
+        try { imageBlob = dataURLToBlob(p.image); } catch (err) { imageBlob = null; }
+      }
+      const recId = p.id || uid();
+      const recUpdatedAt = p.updatedAt || Date.now();
+      await idbPut('papers', {
+        id: recId,
+        name: p.name || '未命名纸样',
+        createdAt: p.createdAt || Date.now(),
+        updatedAt: recUpdatedAt,
+        width: p.width || 0,
+        height: p.height || 0,
+        thumb: p.thumb || '',
+        imageBlob,
+        pieces
+      });
+      written.push({
+        id: recId,
+        name: p.name || '未命名纸样',
+        updatedAt: recUpdatedAt,
+        imageBlob,
+        pieces
+      });
+      okPapers++;
+    }
+    /* 导入成功后自动打开刚导入的纸样（优先含原图、更新时间最新的一份） */
+    let openedName = '';
+    const openable = written.filter((r) => r.imageBlob);
+    if (openable.length) {
+      const target = openable.reduce((a, b) => ((b.updatedAt || 0) >= (a.updatedAt || 0) ? b : a), openable[0]);
+      try {
+        const ok = await loadPaperRecord(target, { confirmDirty: false, silent: true });
+        if (ok) openedName = target.name;
+      } catch (err) {
+        console.error('自动打开导入纸样失败', err);
+      }
+    }
+    if (okPapers || okCloths) {
+      toast(`导入成功：${okPapers} 份纸样、${okCloths} 块布料，分类与共用顶点已保留`
+        + (openedName ? `，已打开「${openedName}」` : ''), 4000);
+    } else {
+      toast('备份中没有可导入的数据');
+    }
+    if (!openedName && !els.listModal.hidden) openSavedList();
+  } catch (err) {
+    console.error(err);
+    toast('导入失败，文件可能已损坏或存储空间不足');
+  }
+}
+
+/* ===================== 导出预览图 ===================== */
+function exportPreview() {
+  if (!state.img) { toast('请先上传纸样图'); return; }
+  const maxSide = 2400;
+  const k = Math.min(1, maxSide / Math.max(state.imgW, state.imgH));
+  const w = Math.max(1, Math.round(state.imgW * k));
+  const h = Math.max(1, Math.round(state.imgH * k));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, w, h);
+  g.setTransform(k, 0, 0, k, 0, 0);
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(state.img, 0, 0, state.imgW, state.imgH);
+  for (const p of state.pieces) drawPieceTexture(g, p);
+  g.save();
+  g.globalCompositeOperation = 'multiply';
+  g.drawImage(state.img, 0, 0, state.imgW, state.imgH);
+  g.restore();
+  c.toBlob((blob) => {
+    if (!blob) { toast('导出失败'); return; }
+    downloadBlob(blob, `预览_${safeName(state.currentName || '纸样')}_${dateStamp()}.png`);
+    toast('预览图已导出');
+  }, 'image/png');
+}
+
+/* ===================== 界面绑定 ===================== */
+function clearCanvas() {
+  if (!state.img && !state.pieces.length) { toast('画布已经是空的'); return; }
+  if (!confirm('将清空当前纸样图与所有裁片，已保存列表和布料库不受影响。继续？')) return;
+  if (state.imgUrl) URL.revokeObjectURL(state.imgUrl);
+  state.img = null; state.imgW = 0; state.imgH = 0;
+  state.imgUrl = null; state.imgBlob = null;
+  state.pieces = []; state.selectedId = null; state.drawing = null;
+  selectedVertexGroup = null;
+  state.currentPaperId = null; state.currentName = '';
+  state.snapGrid = null;
+  els.emptyHint.hidden = false;
+  els.drawbar.hidden = true;
+  els.canvas.classList.remove('drawing');
+  markDirty(false);
+  syncParams();
+  relayout(true);
+  toast('画布已清空');
+}
+function bindUI() {
+  $('btnUploadPaper').addEventListener('click', () => els.filePaper.click());
+  $('btnEmptyUpload').addEventListener('click', () => els.filePaper.click());
+  $('btnSavedList').addEventListener('click', openSavedList);
+  $('btnSavePaper').addEventListener('click', savePaper);
+  $('btnExportBackup').addEventListener('click', exportBackup);
+  $('btnImportBackup').addEventListener('click', () => {
+    if (!state.img) { toast('请先上传对应的纸样原图，再导入裁片备份'); return; }
+    els.fileBackup.click();
+  });
+  $('btnUploadCloth').addEventListener('click', openCatModal);
+  $('btnCatOk').addEventListener('click', () => {
+    closeSheet('catModal');
+    els.fileCloth.click();
+  });
+  $('btnExportAll').addEventListener('click', exportFullBackup);
+  $('btnImportAll').addEventListener('click', () => els.fileFullBackup.click());
+  $('btnNewPolygon').addEventListener('click', startDrawing);
+  $('btnDeletePiece').addEventListener('click', () => {
+    const p = selectedPiece();
+    if (!p) { toast('请先点选要删除的裁片'); return; }
+    state.pieces = state.pieces.filter((x) => x.id !== p.id);
+    state.selectedId = null;
+    selectedVertexGroup = null;
+    markDirty(true);
+    syncParams();
+    render();
+    toast('已删除选中裁片');
+  });
+  $('btnClear').addEventListener('click', clearCanvas);
+  $('btnExportImage').addEventListener('click', exportPreview);
+
+  $('btnUndoPoint').addEventListener('click', undoPoint);
+  $('btnFinishPoly').addEventListener('click', finishDrawing);
+  $('btnCancelPoly').addEventListener('click', cancelDrawing);
+  $('btnDeselect').addEventListener('click', () => selectPiece(null));
+
+  $('btnZoomIn').addEventListener('click', () => {
+    zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 1.25);
+  });
+  $('btnZoomOut').addEventListener('click', () => {
+    zoomAt({ x: els.canvas.clientWidth / 2, y: els.canvas.clientHeight / 2 }, 0.8);
+  });
+  $('btnFit').addEventListener('click', () => { fitView(); render(); });
+
+  els.filePaper.addEventListener('change', async () => {
+    const f = els.filePaper.files && els.filePaper.files[0];
+    els.filePaper.value = '';
+    if (!f) return;
+    if (state.dirty && !confirm('当前未保存的裁片将丢失，仍要上传新的纸样吗？')) return;
+    try {
+      await applyPaper(f, { name: baseName(f.name) || '纸样' });
+      toast('纸样已载入，点击「新增多边形框选区域」开始描边', 2800);
+    } catch (err) {
+      console.error(err);
+      toast('图片读取失败，请换一张试试');
+    }
+  });
+  els.fileCloth.addEventListener('change', async () => {
+    const files = [...(els.fileCloth.files || [])];
+    els.fileCloth.value = '';
+    await addClothFiles(files, pendingClothCat);
+  });
+  els.fileBackup.addEventListener('change', async () => {
+    const f = els.fileBackup.files && els.fileBackup.files[0];
+    els.fileBackup.value = '';
+    await handleBackupFile(f);
+  });
+  els.fileFullBackup.addEventListener('change', async () => {
+    const f = els.fileFullBackup.files && els.fileFullBackup.files[0];
+    els.fileFullBackup.value = '';
+    await importFullBackup(f);
+  });
+
+  els.swTile.addEventListener('click', () => {
+    const p = selectedPiece();
+    if (!p) return;
+    p.tile = !(p.tile !== false);
+    setSwitch(p.tile);
+    markDirty(true);
+    render();
+  });
+  [['rScale', 'scale'], ['rOx', 'ox'], ['rOy', 'oy'], ['rRot', 'rot']].forEach(([id, prop]) => {
+    els[id].addEventListener('input', () => {
+      const p = selectedPiece();
+      if (!p) return;
+      p[prop] = Number(els[id].value);
+      updateValLabels();
+      markDirty(true);
+      scheduleRender();
+    });
+  });
+  els.noteInput.addEventListener('input', () => {
+    const p = selectedPiece();
+    if (!p) return;
+    p.note = els.noteInput.value;
+    markDirty(true);
+  });
+
+  document.querySelectorAll('[data-close]').forEach((b) => {
+    b.addEventListener('click', () => closeSheet(b.getAttribute('data-close')));
+  });
+  document.querySelectorAll('.overlay').forEach((ov) => {
+    ov.addEventListener('pointerdown', (e) => {
+      if (e.target !== ov) return;
+      if (ov.id === 'nameModal') finishName(false);
+      else closeSheet(ov.id);
+    });
+  });
+  $('btnNameCancel').addEventListener('click', () => finishName(false));
+  $('btnNameOk').addEventListener('click', () => finishName(true));
+  els.nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finishName(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finishName(false); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!els.nameModal.hidden) { finishName(false); return; }
+    if (!els.listModal.hidden) { closeSheet('listModal'); return; }
+    if (state.drawing) cancelDrawing();
+  });
+
+  let rt = 0;
+  const toolbarMQ = window.matchMedia('(min-width:1000px)');
+  const syncToolbarMode = () => {
+    document.body.classList.toggle('toolbar-left', toolbarMQ.matches);
+  };
+  const onResize = () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => relayout(false), 120);
+  };
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', onResize);
+  const onMQ = () => { syncToolbarMode(); relayout(false); };
+  if (toolbarMQ.addEventListener) toolbarMQ.addEventListener('change', onMQ);
+  else toolbarMQ.addListener(onMQ);
+  syncToolbarMode();
+
+  window.addEventListener('beforeunload', (e) => {
+    if (!state.dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}
+
+/* ===================== 启动 ===================== */
+async function init() {
+  bindCanvas();
+  bindUI();
+  renderClothCats();
+  renderCloths();
+  try {
+    db = await openDB();
+    await restoreCloths();
+  } catch (err) {
+    console.warn('本地数据库不可用', err);
+    toast('浏览器本地数据库不可用，保存功能受限', 3200);
+  }
+  markDirty(false);
+  relayout(true);
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service Worker 注册失败', err));
+  }
+}
+init();
+</script>
+</body>
+</html>
